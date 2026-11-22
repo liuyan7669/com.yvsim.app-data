@@ -1,0 +1,7 @@
+{
+  "name": "Yvsim.AppData",
+  "rootNamespace": "Yvsim.AppData",
+  "references": [
+    "Yvsim.InspectorGroups"
+  ]
+}

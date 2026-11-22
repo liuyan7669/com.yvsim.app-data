@@ -1,0 +1,8 @@
+{
+  "name": "Yvsim.AppData.Samples",
+  "rootNamespace": "Yvsim.AppData.Samples",
+  "references": [
+    "Yvsim.AppData",
+    "Unity.ugui"
+  ]
+}

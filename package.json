@@ -1,0 +1,39 @@
+{
+  "name": "com.yvsim.app-data",
+  "version": "1.0.0",
+  "displayName": "App Data",
+  "description": "全局运行数据与 JSON 转换工具，适合跨场景共享业务数据，并由项目自行处理 JSON 保存与传输。\n\n主要功能：\n1. 通过 Set<T> 存入或整体替换数据，通过 Get<T> 取得对象并直接修改字段。\n2. 通过 Contains<T> 查询是否存在，Reset<T> 重置一类数据，ResetAll 重置全部已存入类型。\n3. 通过 ToJson/FromJson 导出和还原数据，支持普通类中的一维数组、List 字段及空值恢复，导入失败不部分覆盖。\n4. 通过 Inspector Groups 统一查看和编辑数据，添加菜单仅显示带 AppDataMenu 标记且可创建的类。\n5. 提供可直接运行的 Basic Usage 场景，8 个按钮演示全部 API 和三种 List 字段。\n\n使用说明：数据为带 Serializable 的具体、非泛型普通类；不能直接 Set GameObject、字符串或集合。AppDataMenu 仅控制菜单，不影响 Set。包不包含文件、浏览器或平台存储实现。",
+  "unity": "2021.3",
+  "author": {
+    "name": "Yvsim"
+  },
+  "license": "MIT",
+  "keywords": [
+    "app-data",
+    "json",
+    "runtime-data",
+    "serialization"
+  ],
+  "dependencies": {
+    "com.unity.modules.jsonserialize": "1.0.0",
+    "com.unity.modules.imgui": "1.0.0",
+    "com.yvsim.inspector-groups": "1.0.0"
+  },
+  "samples": [
+    {
+      "displayName": "Basic Usage",
+      "description": "打开 AppDataDemo 场景直接运行，8 个按钮演示全部数据操作与 JSON 转换；示例需要 Unity UI，不需要额外字体。",
+      "path": "Samples~/Basic Usage"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liuyan7669/com.yvsim.app-data.git"
+  },
+  "documentationUrl": "https://github.com/liuyan7669/com.yvsim.app-data#readme",
+  "changelogUrl": "https://github.com/liuyan7669/com.yvsim.app-data/blob/main/CHANGELOG.md",
+  "bugs": {
+    "url": "https://github.com/liuyan7669/com.yvsim.app-data/issues"
+  },
+  "licensesUrl": "https://github.com/liuyan7669/com.yvsim.app-data/blob/main/LICENSE.md"
+}
