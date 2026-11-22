@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,8 +11,10 @@ namespace Yvsim.AppData.Samples
         [SerializeField] private Text dataText;
         [Tooltip("显示刚刚执行了什么操作。")]
         [SerializeField] private Text resultText;
-        [Tooltip("显示 ToJson 导出的字符串，不写入文件。")]
+        [Tooltip("显示同步或分帧导出的 JSON 字符串，不写入文件。")]
         [SerializeField] private Text jsonText;
+        [Tooltip("按钮区域；分帧导出或还原期间暂时禁用，避免中途修改数据或重复操作。")]
+        [SerializeField] private CanvasGroup buttons;
         private string json;
 
         private void Start()
@@ -77,16 +80,71 @@ namespace Yvsim.AppData.Samples
             ShowState("ToJson：已记录当前数据；继续修改，再点 FromJson 可还原。");
         }
 
+        /// <summary>ToJsonAsync 返回操作对象，协程可等待它完成。</summary>
+        public void ExportJsonAsync()
+        {
+            StartCoroutine(ExportInFrames());
+        }
+
+        private IEnumerator ExportInFrames()
+        {
+            buttons.interactable = false;
+            // 每批最多 32 份小工作，两批相隔 1 帧。大 List 的元素和长文本也会分批。
+            AppDataJsonOperation operation = AppData.ToJsonAsync(frameInterval: 1, chunkSize: 32);
+            while (!operation.IsDone)
+            {
+                resultText.text = $"ToJsonAsync：正在导出 {operation.Progress:P0}，请等待。";
+                yield return null;
+            }
+            // 不需要显示进度时，上面的循环可以直接换成 yield return operation。
+            buttons.interactable = true;
+            if (operation.Error != null)
+            {
+                resultText.text = "导出失败：" + operation.Error.Message;
+                yield break;
+            }
+            json = operation.Json;
+            jsonText.text = json;
+            ShowState("ToJsonAsync：分帧导出完成，可用 FromJson 还原。");
+        }
+
         /// <summary>FromJson 用之前导出的字符串还原数据，成功后重新 Get。</summary>
         public void ImportJson()
         {
             if (string.IsNullOrEmpty(json))
             {
-                resultText.text = "请先点击 ToJson，生成一份 JSON。";
+                resultText.text = "请先点击 ToJson 或 ToJsonAsync，生成一份 JSON。";
                 return;
             }
             AppData.FromJson(json);
             ShowState("FromJson：已还原为上次导出 JSON 时的数据。");
+        }
+
+        /// <summary>FromJsonAsync 分帧还原，等待成功后重新 Get 更新画面。</summary>
+        public void ImportJsonAsync()
+        {
+            if (string.IsNullOrEmpty(json))
+            {
+                resultText.text = "请先点击 ToJson 或 ToJsonAsync，生成一份 JSON。";
+                return;
+            }
+            StartCoroutine(ImportInFrames());
+        }
+
+        private IEnumerator ImportInFrames()
+        {
+            buttons.interactable = false;
+            resultText.text = "FromJsonAsync：正在还原，完成前保留原数据。";
+            // 与导出的参数含义相同：两批相隔 1 帧，每批最多执行 32 份小工作。
+            AppDataJsonOperation operation = AppData.FromJsonAsync(json, frameInterval: 1, chunkSize: 32);
+            yield return operation;
+            buttons.interactable = true;
+            if (operation.Error != null)
+            {
+                resultText.text = "还原失败：" + operation.Error.Message;
+                yield break;
+            }
+            ShowState("FromJsonAsync：分帧还原完成，已重新 Get 当前数据。");
         }
 
         // 以下只负责更新场景文字，与 AppData 的使用无关。

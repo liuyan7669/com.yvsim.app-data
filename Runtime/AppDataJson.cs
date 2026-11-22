@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Yvsim.AppData
 {
-    /// <summary>检查数据能否完整转换成 JSON，并记录和恢复原本为 null 的字段。</summary>
+    /// <summary>检查 JSON 支持范围和实际值，并按路径恢复 null 字段。</summary>
     internal static class AppDataJson
     {
         /// <summary>检查数据类和字段类型是否在当前 JSON 数据的支持范围内。</summary>
@@ -49,30 +49,29 @@ namespace Yvsim.AppData
             foreach (FieldInfo field in Fields(type))
             {
                 if (field.IsDefined(typeof(SerializeReference), true))
-                    throw new NotSupportedException("JSON 数据字段暂不支持 SerializeReference 多态，请使用专用JSON 数据数据类：" + field.Name);
+                    throw new NotSupportedException("JSON 数据字段暂不支持 SerializeReference 多态，请使用专用的普通数据类：" + field.Name);
                 ValidateType(field.FieldType, visited);
             }
         }
 
-        /// <summary>检查实际数据中的循环引用等情况，并记下哪些位置原本为 null。</summary>
+        /// <summary>分步检查实际数据中的循环引用、派生实例和非有限数字。</summary>
         /// <param name="value">当前正在检查的数据对象或字段值。</param>
         /// <param name="ancestors">遍历到当前位置时经过的父对象，首次传入空列表，用来判断是否回到了同一个对象。</param>
-        /// <param name="nullPaths">用于收集空值位置的列表，方法会把发现的位置添加进去。</param>
-        /// <param name="path">当前字段位置，例如 items/0/name，首次调用传入空字符串。</param>
-        internal static void CaptureNulls(object value, List<object> ancestors, List<string> nullPaths, string path)
+        /// <returns>检查步骤，调用方可逐步执行并在批次之间让出帧。</returns>
+        internal static IEnumerable<int> ValidateValue(object value, List<object> ancestors)
         {
+            yield return 0;
             if (value == null)
             {
-                nullPaths.Add(path);
-                return;
+                yield break;
             }
             if (value is float single && (float.IsNaN(single) || float.IsInfinity(single))
                 || value is double number && (double.IsNaN(number) || double.IsInfinity(number)))
                 throw new NotSupportedException("JSON 数据不支持 NaN 或 Infinity。");
             if (value is string || value.GetType().IsPrimitive || value.GetType().IsEnum)
-                return;
+                yield break;
             if (ancestors.Exists(item => ReferenceEquals(item, value)))
-                throw new NotSupportedException("JSON 数据数据存在循环引用，请转换为标识关联。");
+                throw new NotSupportedException("JSON 数据存在循环引用，请转换为标识关联。");
             ancestors.Add(value);
             if (value is IList list)
             {
@@ -81,8 +80,8 @@ namespace Yvsim.AppData
                 {
                     object item = list[index];
                     if (item != null && item.GetType() != element)
-                        throw new NotSupportedException("JSON 数据容器包含派生实例，请使用专用JSON 数据数据。");
-                    CaptureNulls(item, ancestors, nullPaths, path.Length == 0 ? index.ToString() : path + "/" + index);
+                        throw new NotSupportedException("JSON 数据容器包含派生实例，请使用专用的普通数据类。");
+                    foreach (int step in ValidateValue(item, ancestors)) yield return step;
                 }
             }
             else
@@ -92,33 +91,18 @@ namespace Yvsim.AppData
                     object child = field.GetValue(value);
                     if (child != null && !field.FieldType.IsValueType && field.FieldType != typeof(string)
                         && !field.FieldType.IsArray && !field.FieldType.IsGenericType && child.GetType() != field.FieldType)
-                        throw new NotSupportedException("JSON 数据字段包含派生实例，请显式映射为JSON 数据数据：" + field.Name);
-                    CaptureNulls(child, ancestors, nullPaths, path.Length == 0 ? field.Name : path + "/" + field.Name);
+                        throw new NotSupportedException("JSON 数据字段包含派生实例，请整理为普通数据类：" + field.Name);
+                    foreach (int step in ValidateValue(child, ancestors)) yield return step;
                 }
             }
             ancestors.RemoveAt(ancestors.Count - 1);
-        }
-
-        /// <summary>根据JSON 数据中记录的位置，把原本为 null 的字段或元素恢复为 null。</summary>
-        /// <param name="value">刚从 JSON 创建出来、需要补回空值的数据对象。</param>
-        /// <param name="paths">JSON 数据中记录的空值位置列表，为 null 时直接结束。</param>
-        internal static void RestoreNulls(object value, List<string> paths)
-        {
-            if (paths == null)
-                return;
-            foreach (string path in paths)
-            {
-                if (string.IsNullOrEmpty(path))
-                    throw new System.IO.InvalidDataException("JSON 数据中的空值路径不合法。");
-                RestoreNullAt(value, path.Split('/'), 0);
-            }
         }
 
         /// <summary>沿着一条字段路径找到目标位置，并将它设为 null。</summary>
         /// <param name="value">当前遍历到的对象或容器。</param>
         /// <param name="segments">用斜杠拆分后的路径，例如 items、0、name。</param>
         /// <param name="depth">当前处理到第几段路径，从 0 开始。</param>
-        private static void RestoreNullAt(object value, string[] segments, int depth)
+        internal static void RestoreNullAt(object value, string[] segments, int depth)
         {
             if (value == null)
                 throw new System.IO.InvalidDataException("JSON 数据空值路径的父对象不存在。");
@@ -169,50 +153,18 @@ namespace Yvsim.AppData
             }
         }
 
-        /// <summary>比较转换前的数据和从 JSON 还原的数据，检查参与JSON 数据的字段值是否一致。</summary>
-        /// <param name="expected">转换前的原始数据对象。</param>
-        /// <param name="restored">从 JSON 创建并补回空值后的数据对象。</param>
-        /// <returns>参与检查的字段和容器元素全部相同时返回 true。</returns>
-        internal static bool Equivalent(object expected, object restored)
-        {
-            if (expected == null || restored == null)
-                return expected == null && restored == null;
-            Type type = expected.GetType();
-            if (type != restored.GetType())
-                return false;
-            if (type.IsPrimitive || type.IsEnum || type == typeof(string))
-                return expected.Equals(restored);
-            if (expected is IList source)
-            {
-                var target = (IList)restored;
-                if (source.Count != target.Count)
-                    return false;
-                for (int index = 0; index < source.Count; index++)
-                {
-                    if (!Equivalent(source[index], target[index]))
-                        return false;
-                }
-                return true;
-            }
-            foreach (FieldInfo field in Fields(type))
-            {
-                if (!Equivalent(field.GetValue(expected), field.GetValue(restored)))
-                    return false;
-            }
-            return true;
-        }
-
         /// <summary>列出当前数据类及基类中需要进行JSON 数据检查的实例字段。</summary>
         /// <param name="type">需要列出字段的数据类型。</param>
-        /// <returns>public 或带 SerializeField 的字段，排除 readonly 和带 NonSerialized 的字段。</returns>
-        private static IEnumerable<FieldInfo> Fields(Type type)
+        /// <returns>public 或带序列化标记的字段，排除 readonly 和带 NonSerialized 的字段；SerializeReference 留给类型检查明确拒绝。</returns>
+        internal static IEnumerable<FieldInfo> Fields(Type type)
         {
             for (Type current = type; current != null && current != typeof(object); current = current.BaseType)
             {
                 foreach (FieldInfo field in current.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
                 {
                     if (!field.IsInitOnly && !field.IsNotSerialized
-                        && (field.IsPublic || field.IsDefined(typeof(SerializeField), true)))
+                        && (field.IsPublic || field.IsDefined(typeof(SerializeField), true)
+                            || field.IsDefined(typeof(SerializeReference), true)))
                         yield return field;
                 }
             }
